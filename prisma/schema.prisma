@@ -1,0 +1,328 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" 
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  COACH
+  STUDENT
+}
+
+enum Stage {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(STUDENT)
+
+  stage     Stage    @default(BEGINNER)
+  coachId   String?
+  coach     User?    @relation("CoachStudents", fields: [coachId], references: [id], onDelete: SetNull)
+  students  User[]   @relation("CoachStudents")
+
+  assignments    Assignment[]
+  puzzleProgress Progress[]
+  courseProgress CourseProgress[]
+  status String @default("ACTIVE")
+
+  joiningDate DateTime?
+  birthDate   DateTime?
+  address     String?
+  parentName  String?
+  parentPhone String?
+  photoUrl    String? @db.Text
+  idCardUrl   String? @db.Text
+
+  managedClasses ClassTiming[] @relation("CoachClasses")
+  classes        ClassTiming[] @relation("StudentClasses")
+  attendanceRecords Attendance[]
+
+  feePayments    FeePayment[]
+  mcqProgress    MCQProgress[]
+
+  createdTasks    Task[]           @relation("CreatedTasks")
+  taskSubmissions TaskSubmission[] @relation("TaskSubmissions")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  LEAVE
+}
+
+model ClassTiming {
+  id          String   @id @default(uuid())
+  name        String
+  dayOfWeek   String
+  startTime   String
+  endTime     String
+  
+  coachId     String
+  coach       User     @relation("CoachClasses", fields: [coachId], references: [id], onDelete: Cascade)
+  
+  students    User[]   @relation("StudentClasses")
+  attendance  Attendance[]
+  tasks       Task[]
+  meetingLink String?   @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Attendance {
+  id            String           @id @default(uuid())
+  date          DateTime
+  status        AttendanceStatus
+  remarks       String?          @db.Text
+  
+  studentId     String
+  student       User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  classTimingId String
+  classTiming   ClassTiming      @relation(fields: [classTimingId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([studentId, classTimingId, date])
+}
+
+// ==========================================
+// EVENTS
+// ==========================================
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  date        DateTime
+  location    String?
+  imageUrl    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ==========================================
+// TASKS (Teacher -> Batch, Student submits image)
+// ==========================================
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?   @db.Text
+  dueDate     DateTime?
+
+  batchId     String
+  batch       ClassTiming @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User     @relation("CreatedTasks", fields: [createdById], references: [id])
+
+  submissions TaskSubmission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TaskSubmission {
+  id          String   @id @default(uuid())
+  imageUrl    String   @db.Text
+  remarks     String?  @db.Text
+  submittedAt DateTime @default(now())
+
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  studentId   String
+  student     User     @relation("TaskSubmissions", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, studentId])
+}
+
+// ==========================================
+// FOLDER / MCQ SYSTEM
+// ==========================================
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+
+  stage     Stage?
+  parentId  String?
+  parent    Folder?  @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[] @relation("SubFolders")
+
+  puzzles   Puzzle[]
+  mcqs      MCQ[]
+}
+
+model MCQ {
+  id             String        @id @default(uuid())
+  question       String        @db.Text
+  options        Json
+  explanation    String?       @db.Text
+  stage          Stage         @default(BEGINNER)
+  folderId       String?
+  createdAt      DateTime      @default(now())
+  correctOptions Int[]
+  position       String?       @db.Text
+  folder         Folder?       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  progress       MCQProgress[]
+  assignments    Assignment[]
+  puzzleId       String?
+}
+
+model MCQProgress {
+  id        String  @id @default(uuid())
+  studentId String
+  mcqId     String
+  isCorrect Boolean
+  attempts  Int     @default(0)
+  mcq       MCQ     @relation(fields: [mcqId], references: [id], onDelete: Cascade)
+  student   User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, mcqId])
+}
+
+// ==========================================
+// COURSES (YouTube-based)
+// ==========================================
+
+model Course {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  level       Stage    @default(BEGINNER)
+  
+  chapters    Chapter[]
+  studentProgress CourseProgress[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Chapter {
+  id        String   @id @default(uuid())
+  title     String
+  content   String?  @db.Text
+  videoUrl  String?  @db.Text
+  fen       String?  @db.Text
+
+  order     Int      @default(0)
+
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model CourseProgress {
+  id        String   @id @default(uuid())
+
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  completedChapters String[] 
+  
+  isCompleted       Boolean  @default(false)
+  lastAccessed      DateTime @default(now())
+
+  @@unique([studentId, courseId])
+}
+
+// ==========================================
+// PAYMENTS
+// ==========================================
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model FeePayment {
+  id        String        @id @default(uuid())
+  amount    Float
+  date      DateTime      @default(now())
+  status    PaymentStatus @default(PENDING)
+  method    String
+  remarks   String?       @db.Text
+  
+  studentId String
+  student   User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// ==========================================
+// LEGACY PUZZLE SYSTEM
+// ==========================================
+
+model Puzzle {
+  id        String   @id @default(uuid())
+  title     String
+  fen       String   @db.Text
+  solution  String   @db.Text
+  data      Json?  
+
+  folderId  String?
+  folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  assignments Assignment[]
+  progress    Progress[]
+}
+
+model Assignment {
+  id          String   @id @default(uuid())
+
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  puzzleId    String?
+  puzzle      Puzzle?  @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+
+  mcqId       String?
+  mcq         MCQ?     @relation(fields: [mcqId], references: [id], onDelete: Cascade)
+
+  assignedBy  String
+  isCompleted Boolean  @default(false)
+  assignedAt  DateTime @default(now())
+  dueDate     DateTime?
+  audioUrl    String?  @db.Text
+}
+
+model Progress {
+  id          String   @id @default(uuid())
+
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  puzzleId    String
+  puzzle      Puzzle   @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+
+  isSolved    Boolean  @default(false)
+  attempts    Int      @default(0)
+  timeSpent   Int      @default(0)
+  mistakes    Json     @default("[]") 
+
+  lastPlayed  DateTime @updatedAt
+
+  @@unique([studentId, puzzleId])
+}
