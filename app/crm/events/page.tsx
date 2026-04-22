@@ -10,6 +10,41 @@ export default function EventsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEvent, setEditingEvent] = useState<any>(null);
     const [form, setForm] = useState({ title: "", description: "", date: "", location: "", imageUrl: "" });
+    const [uploadingImage, setUploadingImage] = useState(false);
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) {
+            alert("File size must be less than 2MB");
+            return;
+        }
+
+        setUploadingImage(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("upload_preset", "aimchess");
+            const res = await fetch("https://api.cloudinary.com/v1_1/dieciekpa/image/upload", {
+                method: "POST",
+                body: fd,
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText);
+            }
+            const data = await res.json();
+            if (data.secure_url) {
+                setForm({ ...form, imageUrl: data.secure_url });
+            }
+        } catch (error: any) {
+            console.error("Cloudinary upload failed", error);
+            alert("Failed to upload image: " + error.message);
+        } finally {
+            setUploadingImage(false);
+        }
+    };
 
     const fetchEvents = async () => {
         setLoading(true);
@@ -147,9 +182,31 @@ export default function EventsPage() {
                                     className="w-full border border-gray-200 p-2.5 rounded-xl text-sm focus:ring-2 focus:ring-purple-400/30 outline-none" placeholder="e.g. Main Hall, Online" />
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Image URL</label>
-                                <input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                                    className="w-full border border-gray-200 p-2.5 rounded-xl text-sm focus:ring-2 focus:ring-purple-400/30 outline-none" placeholder="https://..." />
+                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Event Image</label>
+                                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center relative hover:bg-gray-50 transition-colors">
+                                    {form.imageUrl ? (
+                                        <div className="relative h-32 w-full rounded-lg overflow-hidden">
+                                            <img src={form.imageUrl} alt="Event preview" className="w-full h-full object-cover" />
+                                            <button type="button" onClick={() => setForm({ ...form, imageUrl: "" })} className="absolute top-2 right-2 bg-white/80 p-1.5 rounded-lg hover:bg-white text-red-500 shadow-sm"><Trash2 size={14} /></button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={uploadingImage} />
+                                            <div className="flex flex-col items-center justify-center py-2">
+                                                {uploadingImage ? (
+                                                    <Loader2 className="w-8 h-8 text-purple-500 animate-spin mb-2" />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center mb-2">
+                                                        <Plus className="text-purple-500" size={20} />
+                                                    </div>
+                                                )}
+                                                <span className="text-sm font-medium text-gray-600">
+                                                    {uploadingImage ? "Uploading..." : "Click or drag to upload"}
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => setIsModalOpen(false)}
